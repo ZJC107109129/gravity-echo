@@ -1,0 +1,2366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="引力回响：一款纯 Canvas 绘制的桌面引力弹射小游戏。牵引光点，瞄准同色弧环，在生命耗尽前刷新高分。">
+<meta name="theme-color" content="#02040b">
+<title>引力回响 · Gravity Echo</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --ink: #e8f7ff;
+    --muted: rgba(172, 215, 240, .52);
+    --hairline: rgba(139, 205, 245, .14);
+    --cyan: #63e9ff;
+    --magenta: #ff5bd7;
+    --amber: #ffc35a;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    overflow: hidden;
+    background: #02040b;
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", "Hiragino Sans GB", sans-serif;
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    cursor: default;
+  }
+
+  html.has-custom-cursor,
+  html.has-custom-cursor body,
+  html.has-custom-cursor canvas,
+  html.has-custom-cursor .overlay {
+    cursor: none;
+  }
+
+  canvas {
+    position: fixed;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    display: block;
+  }
+
+  #game { z-index: 1; }
+  #cursor-layer { z-index: 30; pointer-events: none; }
+
+  .overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: space-between;
+    padding: 9vh 7vw 8vh;
+  }
+
+  /* ---------- 开场 ---------- */
+  #intro {
+    transition: opacity .8s ease, visibility .8s ease;
+  }
+
+  #intro.is-out {
+    opacity: 0;
+    visibility: hidden;
+  }
+
+  .intro-head {
+    text-align: center;
+    animation: rise-in 1.15s cubic-bezier(.22, .72, .18, 1) both;
+  }
+
+  .eyebrow {
+    margin: 0 0 22px;
+    color: rgba(156, 212, 245, .46);
+    font-size: 10px;
+    font-weight: 400;
+    letter-spacing: .46em;
+    text-indent: .46em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0 0 17px;
+    padding-left: .2em;
+    color: #ebfbff;
+    font-size: clamp(46px, 6vw, 86px);
+    font-weight: 200;
+    letter-spacing: .2em;
+    line-height: 1;
+    text-shadow: 0 0 48px rgba(82, 208, 255, .26), 0 0 120px rgba(58, 130, 255, .12);
+  }
+
+  .subtitle {
+    margin: 0;
+    color: rgba(154, 207, 236, .38);
+    font-size: 10px;
+    letter-spacing: .52em;
+    text-indent: .52em;
+  }
+
+  .intro-foot {
+    width: min(780px, 88vw);
+    text-align: center;
+    animation: rise-in 1.15s .12s cubic-bezier(.22, .72, .18, 1) both;
+  }
+
+  .rules {
+    display: flex;
+    justify-content: center;
+    gap: clamp(24px, 5vw, 64px);
+    margin-bottom: 15px;
+  }
+
+  .rule {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .rule b {
+    color: rgba(238, 252, 255, .94);
+    font-size: 12px;
+    font-weight: 400;
+    letter-spacing: .15em;
+    text-indent: .15em;
+    text-shadow: 0 0 18px rgba(107, 218, 255, .16);
+  }
+
+  .rule span {
+    color: rgba(178, 219, 243, .62);
+    font-size: 10px;
+    letter-spacing: .08em;
+  }
+
+  .risk-hint {
+    margin: 0 0 24px;
+    color: rgba(255, 195, 90, .48);
+    font-size: 9px;
+    letter-spacing: .17em;
+    text-indent: .17em;
+  }
+
+  .enter-hint {
+    margin: 0 0 17px;
+    color: rgba(196, 235, 252, .56);
+    font-size: 10px;
+    letter-spacing: .27em;
+    text-indent: .27em;
+  }
+
+  .progress {
+    width: 176px;
+    height: 1px;
+    margin: 0 auto;
+    overflow: hidden;
+    background: rgba(120, 196, 235, .1);
+  }
+
+  .progress i {
+    display: block;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(80, 220, 255, .08), rgba(136, 237, 255, .7));
+    transform-origin: 0 50%;
+    animation: intro-progress 3s linear forwards;
+  }
+
+  /* ---------- 结算 ---------- */
+  #result {
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    padding: 0;
+    background: radial-gradient(ellipse at center, rgba(3, 8, 18, .2), rgba(1, 3, 8, .7));
+    transition: opacity .55s ease, visibility .55s ease;
+  }
+
+  #result.is-visible {
+    opacity: 1;
+    visibility: visible;
+  }
+
+  .result-card {
+    position: relative;
+    width: min(524px, 88vw);
+    padding: 46px 54px 32px;
+    border: 1px solid rgba(137, 199, 235, .14);
+    background:
+      linear-gradient(180deg, rgba(9, 20, 36, .79), rgba(3, 8, 17, .73));
+    box-shadow:
+      0 44px 130px rgba(0, 0, 0, .58),
+      inset 0 1px 0 rgba(255, 255, 255, .045);
+    backdrop-filter: blur(20px) saturate(1.1);
+    -webkit-backdrop-filter: blur(20px) saturate(1.1);
+    text-align: center;
+    opacity: 0;
+    transform: translateY(14px) scale(.985);
+  }
+
+  #result.is-visible .result-card {
+    animation: result-in .8s .26s cubic-bezier(.2, .72, .18, 1) both;
+  }
+
+  .result-card::before,
+  .result-card::after {
+    content: "";
+    position: absolute;
+    left: 20%;
+    right: 20%;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(123, 220, 255, .28), transparent);
+  }
+
+  .result-card::before { top: 0; }
+  .result-card::after { bottom: 0; opacity: .45; }
+
+  .result-card .eyebrow {
+    margin-bottom: 16px;
+    color: rgba(255, 139, 207, .43);
+  }
+
+  h2 {
+    margin: 0;
+    padding-left: .18em;
+    font-size: 30px;
+    font-weight: 300;
+    letter-spacing: .18em;
+    color: rgba(237, 251, 255, .94);
+    text-shadow: 0 0 30px rgba(100, 215, 255, .18);
+  }
+
+  .result-stats {
+    display: flex;
+    justify-content: center;
+    gap: clamp(38px, 7vw, 68px);
+    margin: 38px 0 18px;
+  }
+
+  .result-stat {
+    display: flex;
+    flex-direction: column;
+    gap: 9px;
+  }
+
+  .result-stat span {
+    color: rgba(166, 207, 233, .46);
+    font-size: 9px;
+    letter-spacing: .22em;
+    text-indent: .22em;
+  }
+
+  .result-stat strong {
+    color: #effcff;
+    font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+    font-size: clamp(30px, 3.2vw, 42px);
+    font-weight: 300;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .02em;
+    line-height: 1;
+    text-shadow: 0 0 26px rgba(110, 226, 255, .2);
+  }
+
+  .new-record {
+    margin: 0 0 19px;
+    color: var(--amber);
+    font-size: 9px;
+    letter-spacing: .42em;
+    text-indent: .42em;
+    text-shadow: 0 0 16px rgba(255, 174, 58, .35);
+  }
+
+  .new-record[hidden] { display: none; }
+
+  .result-meta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 14px;
+    margin: 0 0 30px;
+    color: rgba(158, 203, 230, .42);
+    font-size: 10px;
+    letter-spacing: .08em;
+  }
+
+  .result-meta i {
+    width: 18px;
+    height: 1px;
+    background: rgba(142, 204, 240, .18);
+  }
+
+  .restart-hint {
+    margin: 0;
+    padding-top: 21px;
+    border-top: 1px solid rgba(132, 198, 235, .1);
+    color: rgba(177, 221, 245, .4);
+    font-size: 10px;
+    letter-spacing: .18em;
+    text-indent: .18em;
+  }
+
+  @keyframes intro-progress {
+    from { transform: scaleX(0); }
+    to { transform: scaleX(1); }
+  }
+
+  @keyframes rise-in {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes result-in {
+    from { opacity: 0; transform: translateY(14px) scale(.985); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  @media (max-height: 700px) {
+    .overlay { padding-top: 6vh; padding-bottom: 5vh; }
+    h1 { font-size: clamp(38px, 5vw, 62px); }
+    .rules { margin-bottom: 10px; }
+    .risk-hint { margin-bottom: 16px; }
+    .intro-head .eyebrow { margin-bottom: 14px; }
+    .result-card { padding-top: 34px; padding-bottom: 24px; }
+    .result-stats { margin-top: 28px; }
+  }
+</style>
+</head>
+<body>
+  <canvas id="game" role="img" aria-label="引力回响游戏画面"></canvas>
+  <canvas id="cursor-layer" aria-hidden="true"></canvas>
+
+  <section id="intro" class="overlay" aria-label="引力回响开场提示">
+    <div class="intro-head">
+      <p class="eyebrow">Gravity Echo</p>
+      <h1>引力回响</h1>
+      <p class="subtitle">引 力 牵 引 · 同 色 回 响</p>
+    </div>
+    <div class="intro-foot">
+      <div class="rules">
+        <div class="rule"><b>按住左键</b><span>牵引光点 · 指向目标</span></div>
+        <div class="rule"><b>松开 / 空格</b><span>反向弹射 · 命中同色</span></div>
+        <div class="rule"><b>同色三次</b><span>触发共振 · 全场减速</span></div>
+      </div>
+      <p class="risk-hint">异色失命 · 吸附越多倍率越高 · 停留越久越易过载</p>
+      <p class="enter-hint">点击画面立即开始 · 3 秒后自动进入</p>
+      <div class="progress" aria-hidden="true"><i id="intro-progress"></i></div>
+    </div>
+  </section>
+
+  <section id="result" class="overlay" aria-label="游戏结算" aria-hidden="true">
+    <div class="result-card">
+      <p class="eyebrow">Signal Lost</p>
+      <h2>回响终止</h2>
+      <div class="result-stats">
+        <div class="result-stat"><span>本次分数</span><strong id="final-score">0</strong></div>
+        <div class="result-stat"><span>最高记录</span><strong id="best-score">0</strong></div>
+      </div>
+      <p id="new-record" class="new-record" hidden>新 纪 录</p>
+      <p class="result-meta">
+        <span id="hit-count">0 次命中</span>
+        <i aria-hidden="true"></i>
+        <span id="res-count">0 次共振</span>
+      </p>
+      <p class="restart-hint">点击任意处 · 或按 R 重新开始</p>
+    </div>
+  </section>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =========================================================
+     常量与状态
+     ========================================================= */
+  const TAU = Math.PI * 2;
+  const STATE = Object.freeze({ START: 'start', PLAYING: 'playing', OVER: 'over' });
+  const START_LIVES = 3;
+  const MAX_MOTES = 16;
+  const MAX_CAPTURED = 10;
+  const MAX_PARTICLES = 240;
+  const MAX_WAVES = 18;
+  const MAX_POPUPS = 24;
+  const BEST_KEY = 'gravity-echo-best-v1';
+
+  const PALETTE = [
+    { name: '青', body: '#63e9ff', rgb: '99,233,255' },
+    { name: '品红', body: '#ff5bd7', rgb: '255,91,215' },
+    { name: '琥珀', body: '#ffc35a', rgb: '255,195,90' },
+    { name: '青柠', body: '#93ffa9', rgb: '147,255,169' },
+    { name: '星紫', body: '#b79bff', rgb: '183,155,255' }
+  ];
+  const SLOT_COLORS = [0, 3, 1, 4, 2];
+
+  /* =========================================================
+     元素与画布
+     ========================================================= */
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d', { alpha: false });
+  const cursorCanvas = document.getElementById('cursor-layer');
+  const cctx = cursorCanvas.getContext('2d');
+
+  const ui = {
+    intro: document.getElementById('intro'),
+    progress: document.getElementById('intro-progress'),
+    result: document.getElementById('result'),
+    finalScore: document.getElementById('final-score'),
+    bestScore: document.getElementById('best-score'),
+    newRecord: document.getElementById('new-record'),
+    hitCount: document.getElementById('hit-count'),
+    resCount: document.getElementById('res-count')
+  };
+
+  let W = 0, H = 0, DPR = 1, CX = 0, CY = 0, BASE = 900;
+  let CORE_R = 48, RING_R = 320, FIELD_R = 185, ORBIT_R = 95, SPAWN_R = 416, TOP_LINE = 80;
+  let backgroundGradient = null;
+  let vignetteGradient = null;
+  let stars = [];
+  let laidOut = false;
+
+  let state = STATE.START;
+  let clock = 0;
+  let lastFrameTime = performance.now();
+  let game = null;
+  let targets = null;
+  let motes = [];
+  let particles = [];
+  let popups = [];
+  let waves = [];
+  let nextMoteId = 1;
+  let bestCache = 0;
+
+  const pointer = {
+    x: 0, y: 0,
+    sx: 0, sy: 0,
+    visible: false,
+    down: false
+  };
+
+  /* =========================================================
+     小工具
+     ========================================================= */
+  const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+  const lerp = (a, b, t) => a + (b - a) * t;
+  const rand = (a, b) => a + Math.random() * (b - a);
+  const angleDiff = (from, to) => Math.atan2(Math.sin(to - from), Math.cos(to - from));
+  const rgba = (rgb, alpha) => 'rgba(' + rgb + ',' + clamp(alpha, 0, 1) + ')';
+  const paletteRgb = (index) => (index >= 0 ? PALETTE[index].rgb : '176,242,255');
+  const formatNumber = (n) => Math.max(0, Math.floor(n)).toLocaleString('en-US');
+
+  function drawSpacedText(text, x, y, spacing, align) {
+    const chars = Array.from(text);
+    if (!chars.length) return;
+    const widths = chars.map((ch) => ctx.measureText(ch).width);
+    let total = spacing * Math.max(0, chars.length - 1);
+    for (const w of widths) total += w;
+    let px = x;
+    if (align === 'center') px -= total / 2;
+    else if (align === 'right') px -= total;
+    const oldAlign = ctx.textAlign;
+    ctx.textAlign = 'left';
+    for (let i = 0; i < chars.length; i++) {
+      ctx.fillText(chars[i], px, y);
+      px += widths[i] + spacing;
+    }
+    ctx.textAlign = oldAlign;
+  }
+
+  function safeLoadBest() {
+    try {
+      const value = Number(window.localStorage.getItem(BEST_KEY));
+      return Number.isFinite(value) && value > 0 ? Math.floor(value) : 0;
+    } catch (err) {
+      return 0;
+    }
+  }
+
+  function safeSaveBest(value) {
+    try {
+      window.localStorage.setItem(BEST_KEY, String(Math.floor(value)));
+    } catch (err) {
+      /* 某些浏览器在 file:// 下会禁用 localStorage，游戏仍可运行。 */
+    }
+  }
+
+  /* =========================================================
+     尺寸、星空与渐变
+     ========================================================= */
+  function resize() {
+    const oldCX = CX;
+    const oldCY = CY;
+    const oldBase = BASE;
+
+    W = Math.max(320, window.innerWidth);
+    H = Math.max(320, window.innerHeight);
+    DPR = Math.min(window.devicePixelRatio || 1, 2);
+
+    for (const c of [canvas, cursorCanvas]) {
+      c.width = Math.round(W * DPR);
+      c.height = Math.round(H * DPR);
+      c.style.width = W + 'px';
+      c.style.height = H + 'px';
+    }
+    ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+    cctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+
+    CX = W * 0.5;
+    CY = H * 0.5;
+    BASE = Math.min(W, H);
+    CORE_R = clamp(BASE * 0.052, 31, 57);
+    RING_R = BASE * 0.355;
+    FIELD_R = RING_R * 0.7;
+    ORBIT_R = RING_R * 0.34;
+    SPAWN_R = BASE * 0.462;
+    TOP_LINE = clamp(H * 0.09, 70, 92);
+
+    if (laidOut && oldBase > 1 && motes.length) {
+      const scale = BASE / oldBase;
+      for (const m of motes) {
+        m.x = CX + (m.x - oldCX) * scale;
+        m.y = CY + (m.y - oldCY) * scale;
+        m.vx *= scale;
+        m.vy *= scale;
+        m.r = clamp(m.r * scale, 2.2, 5.8);
+        m.orbitRadius *= scale;
+        for (const p of m.trail) {
+          p.x = CX + (p.x - oldCX) * scale;
+          p.y = CY + (p.y - oldCY) * scale;
+        }
+      }
+      for (const p of particles) {
+        p.x = CX + (p.x - oldCX) * scale;
+        p.y = CY + (p.y - oldCY) * scale;
+      }
+    }
+    laidOut = true;
+
+    if (!pointer.visible) {
+      pointer.x = CX;
+      pointer.y = CY;
+    }
+    pointer.sx = clamp(pointer.sx || CX, 0, W);
+    pointer.sy = clamp(pointer.sy || CY, 0, H);
+
+    makeGradients();
+    buildStars();
+  }
+
+  function makeGradients() {
+    backgroundGradient = ctx.createLinearGradient(0, 0, 0, H);
+    backgroundGradient.addColorStop(0, '#01030a');
+    backgroundGradient.addColorStop(0.34, '#041020');
+    backgroundGradient.addColorStop(0.68, '#03101c');
+    backgroundGradient.addColorStop(1, '#010208');
+
+    vignetteGradient = ctx.createRadialGradient(
+      CX, CY, BASE * 0.12,
+      CX, CY, Math.max(W, H) * 0.76
+    );
+    vignetteGradient.addColorStop(0, 'rgba(0,0,0,0)');
+    vignetteGradient.addColorStop(0.56, 'rgba(0,2,8,.14)');
+    vignetteGradient.addColorStop(1, 'rgba(0,1,5,.72)');
+  }
+
+  function buildStars() {
+    stars = [];
+    const count = Math.floor(clamp((W * H) / 7800, 110, 230));
+    for (let i = 0; i < count; i++) {
+      stars.push({
+        x: Math.random(),
+        y: Math.random(),
+        r: Math.pow(Math.random(), 2.1) * 1.15 + 0.25,
+        alpha: rand(0.1, 0.48),
+        depth: rand(0.2, 1),
+        phase: rand(0, TAU),
+        speed: rand(0.35, 1.35),
+        blue: Math.random() < 0.4
+      });
+    }
+  }
+
+  function paintNebula(x, y, radius, color) {
+    const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+    g.addColorStop(0, color);
+    g.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = g;
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, TAU);
+    ctx.fill();
+  }
+
+  /* =========================================================
+     一局的数据
+     ========================================================= */
+  function makeGame() {
+    return {
+      score: 0,
+      lives: START_LIVES,
+      best: bestCache,
+      colorCount: 3,
+      spawnInterval: 1.42,
+      elapsed: 0,
+      introTime: 0,
+      overTime: 0,
+      spawnTimer: 1.0,
+      fieldActive: false,
+      aimAngle: -Math.PI / 2,
+      fieldPulse: 0,
+      releasePulse: 0,
+      corePulse: 0,
+      damageFlash: 0,
+      resonanceGlow: 0,
+      resonance: 0,
+      resonanceCount: 0,
+      combo: 0,
+      lastColor: -1,
+      hitCount: 0,
+      invuln: 0,
+      shake: 0,
+      capturedCount: 0,
+      pressure: 0,
+      tipTimer: 0,
+      banner: null,
+      newRecord: false
+    };
+  }
+
+  function makeTargets() {
+    const offset = Math.random() * TAU;
+    const dir = Math.random() < 0.5 ? 1 : -1;
+    return {
+      rotation: 0,
+      dir: dir,
+      arcs: SLOT_COLORS.map((colorIndex, slot) => ({
+        colorIndex: colorIndex,
+        slot: slot,
+        baseAngle: offset + (slot / 5) * TAU,
+        width: rand(0.54, 0.68),
+        active: colorIndex < 3,
+        flash: 0
+      }))
+    };
+  }
+
+  function startRound(showIntro) {
+    bestCache = safeLoadBest();
+    game = makeGame();
+    targets = makeTargets();
+    motes = [];
+    particles = [];
+    popups = [];
+    waves = [];
+    nextMoteId = 1;
+    pointer.down = false;
+
+    ui.result.classList.remove('is-visible');
+    ui.result.setAttribute('aria-hidden', 'true');
+    ui.newRecord.hidden = true;
+
+    if (showIntro) {
+      state = STATE.START;
+      game.introTime = 0;
+      ui.intro.classList.remove('is-out');
+      ui.intro.setAttribute('aria-hidden', 'false');
+      // 重播 3 秒进度线
+      ui.progress.style.animation = 'none';
+      void ui.progress.offsetWidth;
+      ui.progress.style.animation = '';
+    } else {
+      state = STATE.START;
+      beginPlay();
+    }
+  }
+
+  function beginPlay() {
+    if (state === STATE.OVER) return;
+    state = STATE.PLAYING;
+    hideIntro();
+    game.tipTimer = 3.1;
+    game.spawnTimer = 1.05;
+    game.fieldActive = false;
+    pointer.down = false;
+
+    spawnMote(true);
+    spawnMote(true);
+    spawnMote(true);
+    addWave(CX, CY, CORE_R * 1.4, CORE_R * 4.8, -1, 0.9, 1.1);
+  }
+
+  function hideIntro() {
+    ui.intro.classList.add('is-out');
+    ui.intro.setAttribute('aria-hidden', 'true');
+  }
+
+  function endRound() {
+    if (state !== STATE.PLAYING) return;
+    state = STATE.OVER;
+    game.fieldActive = false;
+    pointer.down = false;
+    game.overTime = 0;
+    game.banner = null;
+    game.shake = Math.max(game.shake, 12);
+    game.damageFlash = Math.max(game.damageFlash, 0.9);
+
+    const previousBest = bestCache;
+    game.newRecord = game.score > previousBest && game.score > 0;
+    if (game.newRecord) {
+      bestCache = game.score;
+      safeSaveBest(bestCache);
+    }
+    game.best = bestCache;
+
+    ui.finalScore.textContent = formatNumber(game.score);
+    ui.bestScore.textContent = formatNumber(game.best);
+    ui.hitCount.textContent = game.hitCount + ' 次命中';
+    ui.resCount.textContent = game.resonanceCount + ' 次共振';
+    ui.newRecord.hidden = !game.newRecord;
+
+    ui.result.classList.remove('is-visible');
+    void ui.result.offsetWidth;
+    ui.result.classList.add('is-visible');
+    ui.result.setAttribute('aria-hidden', 'false');
+
+    addWave(CX, CY, CORE_R * 1.8, CORE_R * 7.5, 1, 1.1, 1.5);
+    emitBurst(CX, CY, 1, 22, 1.1);
+  }
+
+  /* =========================================================
+     目标环与难度
+     ========================================================= */
+  function updateTargetRotation(dt) {
+    if (!targets) return;
+    let speed = 0.006;
+    if (state === STATE.PLAYING) {
+      speed = 0.02 + Math.min(game.score / 90000, 0.1);
+    } else if (state === STATE.START) {
+      speed = 0.015;
+    }
+    targets.rotation += targets.dir * speed * dt;
+    for (const arc of targets.arcs) {
+      if (arc.flash > 0) arc.flash = Math.max(0, arc.flash - dt * 3.6);
+    }
+  }
+
+  function updateDifficulty() {
+    const nextCount = game.score >= 6000 ? 5 : game.score >= 2400 ? 4 : 3;
+    if (nextCount > game.colorCount) {
+      game.colorCount = nextCount;
+      for (const arc of targets.arcs) {
+        if (arc.colorIndex < nextCount && !arc.active) {
+          arc.active = true;
+          arc.flash = 1;
+        }
+      }
+      const newColor = PALETTE[nextCount - 1];
+      showBanner('新 频 率', newColor.name + ' 光点已接入', nextCount - 1, 2.2);
+      addWave(CX, CY, RING_R * 0.55, RING_R * 1.35, nextCount - 1, 1.1, 1.2);
+    }
+    game.spawnInterval = Math.max(0.58, 1.42 - game.score * 0.00011);
+  }
+
+  function getArcAt(angle) {
+    if (!targets) return null;
+    for (const arc of targets.arcs) {
+      if (!arc.active) continue;
+      const a = arc.baseAngle + targets.rotation;
+      if (Math.abs(angleDiff(angle, a)) <= arc.width / 2) return arc;
+    }
+    return null;
+  }
+
+  /* =========================================================
+     生成与物理
+     ========================================================= */
+  function spawnMote(initial) {
+    if (!game || motes.length >= MAX_MOTES) return;
+
+    let angle = Math.random() * TAU;
+    for (let attempt = 0; attempt < 7; attempt++) {
+      const candidate = Math.random() * TAU;
+      const x = CX + Math.cos(candidate) * SPAWN_R;
+      const y = CY + Math.sin(candidate) * SPAWN_R;
+      const clear = motes.every((m) => Math.hypot(m.x - x, m.y - y) > BASE * 0.105);
+      angle = candidate;
+      if (clear) break;
+    }
+
+    const distance = SPAWN_R * (initial ? rand(0.84, 0.9) : rand(0.955, 1.035));
+    const x = CX + Math.cos(angle) * distance;
+    const y = CY + Math.sin(angle) * distance;
+    const colorIndex = Math.floor(Math.random() * game.colorCount);
+    const inward = BASE * rand(0.05, 0.068);
+    const tangent = BASE * rand(-0.009, 0.009);
+
+    motes.push({
+      id: nextMoteId++,
+      x: x,
+      y: y,
+      vx: -Math.cos(angle) * inward - Math.sin(angle) * tangent,
+      vy: -Math.sin(angle) * inward + Math.cos(angle) * tangent,
+      r: clamp(BASE * rand(0.0039, 0.0056), 3, 5.8),
+      colorIndex: colorIndex,
+      state: 'drift',
+      trail: [{ x: x, y: y }],
+      seed: Math.random() * 1000,
+      orbitAngle: 0,
+      orbitRadius: 0,
+      capturedAt: 0,
+      mult: 1,
+      dead: false
+    });
+
+    addWave(x, y, 2, 17, colorIndex, 0.45, 1);
+  }
+
+  function updateSpawning(dt) {
+    game.spawnTimer -= dt;
+    if (game.spawnTimer > 0) return;
+    if (motes.length < MAX_MOTES) spawnMote();
+    if (motes.length >= MAX_MOTES) {
+      game.spawnTimer = 0.5;
+    } else {
+      game.spawnTimer = game.spawnInterval * rand(0.78, 1.18);
+    }
+  }
+
+  function updateMotes(dt) {
+    const slow = game.resonance > 0 ? 0.32 : 1;
+    const captured = motes.filter((m) => m.state === 'captured' && !m.dead);
+    game.capturedCount = captured.length;
+
+    for (const m of motes) {
+      if (m.dead) continue;
+
+      if (m.state === 'drift') {
+        updateDriftingMote(m, dt, slow);
+      } else if (m.state === 'captured') {
+        const index = captured.indexOf(m);
+        updateCapturedMote(m, dt, index, captured.length);
+      } else {
+        updateLaunchedMote(m, dt, slow);
+      }
+
+      if (!m.dead) recordTrail(m);
+
+      if (state !== STATE.PLAYING) break;
+    }
+
+    if (state === STATE.PLAYING) {
+      motes = motes.filter((m) => !m.dead);
+      refreshCaptureStats();
+    }
+  }
+
+  function recordTrail(m) {
+    m.trail.push({ x: m.x, y: m.y });
+    const limit = m.state === 'launched' ? 22 : m.state === 'captured' ? 16 : 10;
+    while (m.trail.length > limit) m.trail.shift();
+  }
+
+  function updateDriftingMote(m, dt, slow) {
+    let dx = CX - m.x;
+    let dy = CY - m.y;
+    let d = Math.max(0.001, Math.hypot(dx, dy));
+
+    if (game.fieldActive) {
+      if (d < FIELD_R + 24) {
+        const falloff = 1 - Math.min(1, d / (FIELD_R + 24));
+        const accel = BASE * (1.45 + 2.7 * falloff);
+        m.vx += (dx / d) * accel * dt;
+        m.vy += (dy / d) * accel * dt;
+        const swirl = BASE * 0.8 * falloff * (m.seed > 500 ? 1 : -1);
+        m.vx += (-dy / d) * swirl * dt;
+        m.vy += (dx / d) * swirl * dt;
+      }
+    } else {
+      const driftSpeed = BASE * (0.06 + Math.min(game.score / 110000, 0.016));
+      const tangent = Math.sin(clock * 0.36 + m.seed) * BASE * 0.007;
+      const tvx = (dx / d) * driftSpeed - (dy / d) * tangent;
+      const tvy = (dy / d) * driftSpeed + (dx / d) * tangent;
+      const k = Math.min(1, dt * 0.9);
+      m.vx += (tvx - m.vx) * k;
+      m.vy += (tvy - m.vy) * k;
+    }
+
+    const speed = Math.hypot(m.vx, m.vy);
+    const maxSpeed = BASE * 1.35;
+    if (speed > maxSpeed) {
+      m.vx = (m.vx / speed) * maxSpeed;
+      m.vy = (m.vy / speed) * maxSpeed;
+    }
+
+    m.x += m.vx * dt * slow;
+    m.y += m.vy * dt * slow;
+
+    dx = CX - m.x;
+    dy = CY - m.y;
+    d = Math.max(0.001, Math.hypot(dx, dy));
+
+    if (game.fieldActive && d < ORBIT_R + 15 && game.capturedCount < MAX_CAPTURED) {
+      captureMote(m);
+      return;
+    }
+    if (d < CORE_R + m.r * 0.7) {
+      overloadMote(m);
+    }
+  }
+
+  function updateCapturedMote(m, dt, index, count) {
+    const spread = 0.14;
+    const offset = (index - (count - 1) / 2) * spread;
+    const desired = game.aimAngle + offset;
+    const diff = angleDiff(m.orbitAngle, desired);
+    m.orbitAngle += diff * Math.min(1, dt * 8.5);
+
+    if (m.orbitRadius > ORBIT_R) {
+      m.orbitRadius += (ORBIT_R - m.orbitRadius) * Math.min(1, dt * 4.2);
+    } else {
+      const shrink = BASE * (0.0045 + 0.0033 * Math.max(0, count - 1));
+      const slowShrink = game.resonance > 0 ? 0.55 : 1;
+      m.orbitRadius -= shrink * slowShrink * dt;
+    }
+    m.orbitRadius = Math.max(4, m.orbitRadius);
+
+    const wobble = Math.sin(clock * 2.1 + m.seed) * 1.8;
+    const nx = Math.cos(m.orbitAngle + Math.PI / 2) * wobble;
+    const ny = Math.sin(m.orbitAngle + Math.PI / 2) * wobble;
+    m.x = CX + Math.cos(m.orbitAngle) * m.orbitRadius + nx;
+    m.y = CY + Math.sin(m.orbitAngle) * m.orbitRadius + ny;
+    m.vx = 0;
+    m.vy = 0;
+
+    if (m.orbitRadius <= CORE_R + m.r * 0.8) {
+      overloadMote(m);
+    }
+  }
+
+  function updateLaunchedMote(m, dt, slow) {
+    const prevX = m.x;
+    const prevY = m.y;
+    const prevR = Math.hypot(prevX - CX, prevY - CY);
+    m.x += m.vx * dt * slow;
+    m.y += m.vy * dt * slow;
+    const r = Math.hypot(m.x - CX, m.y - CY);
+
+    if (prevR < RING_R && r >= RING_R) {
+      // 取穿过目标环时的精确交点，避免低帧率下角度偏移。
+      const t = clamp((RING_R - prevR) / Math.max(0.001, r - prevR), 0, 1);
+      const ix = prevX + (m.x - prevX) * t;
+      const iy = prevY + (m.y - prevY) * t;
+      resolveImpact(m, ix, iy);
+      return;
+    }
+    if (r > RING_R + 80) {
+      m.dead = true;
+    }
+  }
+
+  function captureMote(m) {
+    if (m.dead) return;
+    m.state = 'captured';
+    m.orbitAngle = Math.atan2(m.y - CY, m.x - CX);
+    m.orbitRadius = Math.max(ORBIT_R, Math.hypot(m.x - CX, m.y - CY));
+    m.capturedAt = game.elapsed;
+    m.trail = [{ x: m.x, y: m.y }];
+    m.vx = 0;
+    m.vy = 0;
+    game.capturedCount++;
+    emitBurst(m.x, m.y, m.colorIndex, 4, 0.35);
+  }
+
+  function releaseField() {
+    if (!game || !game.fieldActive) return;
+    game.fieldActive = false;
+    pointer.down = false;
+
+    const captured = motes.filter((m) => m.state === 'captured' && !m.dead);
+
+    if (!captured.length) {
+      game.releasePulse = 0.35;
+      addWave(CX, CY, CORE_R, CORE_R * 3.2, -1, 0.42, 1);
+      return;
+    }
+
+    const multiplier = 1 + (captured.length - 1) * 0.35;
+    for (const m of captured) {
+      m.state = 'launched';
+      const angle = Math.atan2(m.y - CY, m.x - CX);
+      const speed = BASE * rand(1.56, 1.7);
+      m.vx = Math.cos(angle) * speed;
+      m.vy = Math.sin(angle) * speed;
+      m.mult = multiplier;
+      emitLaunchParticles(m);
+    }
+
+    game.releasePulse = 1;
+    game.corePulse = Math.max(game.corePulse, 0.75);
+    game.shake = Math.max(game.shake, 2.2);
+    addWave(CX, CY, CORE_R * 1.2, RING_R * 0.72, -1, 0.6, 1.5);
+  }
+
+  function refreshCaptureStats() {
+    let count = 0;
+    let minRadius = Infinity;
+    for (const m of motes) {
+      if (m.state !== 'captured' || m.dead) continue;
+      count++;
+      if (m.orbitRadius < minRadius) minRadius = m.orbitRadius;
+    }
+    game.capturedCount = count;
+    if (!count) {
+      game.pressure = 0;
+    } else {
+      game.pressure = clamp(1 - (minRadius - CORE_R) / Math.max(1, ORBIT_R - CORE_R), 0, 1);
+    }
+  }
+
+  /* =========================================================
+     命中、伤害与共振
+     ========================================================= */
+  function resolveImpact(m, ix, iy) {
+    if (m.dead) return;
+    m.dead = true;
+    const hx = ix !== undefined ? ix : CX + Math.cos(Math.atan2(m.y - CY, m.x - CX)) * RING_R;
+    const hy = iy !== undefined ? iy : CY + Math.sin(Math.atan2(m.y - CY, m.x - CX)) * RING_R;
+    const angle = Math.atan2(hy - CY, hx - CX);
+    const arc = getArcAt(angle);
+
+    if (!arc) {
+      breakCombo();
+      addPopup(hx, hy, '脱靶', '#b8d6e8', 11);
+      emitBurst(hx, hy, m.colorIndex, 5, 0.42);
+      addWave(hx, hy, 2, RING_R * 0.06, m.colorIndex, 0.4, 1);
+      return;
+    }
+
+    if (arc.colorIndex === m.colorIndex) {
+      arc.flash = 1;
+      registerHit(m, arc, hx, hy);
+    } else {
+      arc.flash = 0.55;
+      breakCombo();
+      emitBurst(hx, hy, arc.colorIndex, 16, 0.9);
+      addWave(hx, hy, 3, RING_R * 0.1, arc.colorIndex, 0.55, 1.5);
+      takeDamage('异色', hx, hy);
+    }
+  }
+
+  function registerHit(m, arc, hx, hy) {
+    const p = PALETTE[m.colorIndex];
+
+    if (game.lastColor === m.colorIndex) {
+      game.combo++;
+    } else {
+      game.combo = 1;
+      game.lastColor = m.colorIndex;
+    }
+
+    const comboBonus = 1 + Math.max(0, game.combo - 1) * 0.2;
+    const gain = Math.round(100 * m.mult * comboBonus);
+    game.score += gain;
+    game.hitCount++;
+    game.corePulse = Math.max(game.corePulse, 0.9);
+    game.shake = Math.max(game.shake, 1.4);
+
+    addPopup(hx + rand(-8, 8), hy - 8, '+' + gain, p.body, game.combo >= 2 ? 16 : 14);
+    emitBurst(hx, hy, m.colorIndex, 15, 0.95);
+    addWave(hx, hy, 2, RING_R * 0.09, m.colorIndex, 0.52, 1.6);
+    addWave(CX, CY, CORE_R * 1.1, CORE_R * 2.5, m.colorIndex, 0.36, 1);
+
+    if (game.combo >= 3) {
+      triggerResonance();
+      game.combo = 0;
+      game.lastColor = -1;
+    }
+  }
+
+  function breakCombo() {
+    game.combo = 0;
+    game.lastColor = -1;
+  }
+
+  function takeDamage(label, x, y) {
+    if (state !== STATE.PLAYING) return;
+    if (game.invuln > 0) return;
+
+    game.invuln = 0.48;
+    game.lives--;
+    game.damageFlash = 1;
+    game.shake = Math.max(game.shake, 8);
+    game.combo = 0;
+    game.lastColor = -1;
+
+    addPopup(
+      x !== undefined ? x : CX,
+      y !== undefined ? y : CY - CORE_R * 1.5,
+      label || '过载',
+      '#ff7098',
+      15
+    );
+    emitBurst(
+      x !== undefined ? x : CX,
+      y !== undefined ? y : CY,
+      1, 20, 1.15
+    );
+    addWave(CX, CY, CORE_R * 1.2, CORE_R * 4.4, -1, 0.8, 1.8);
+    addWave(CX, CY, CORE_R * 2, CORE_R * 6, 1, 0.65, 1);
+
+    if (game.lives <= 0) endRound();
+  }
+
+  function overloadMote(m) {
+    if (m.dead || state !== STATE.PLAYING) return;
+    m.dead = true;
+    addPopup(CX + rand(-18, 18), CY - CORE_R * 1.2, '过载', '#ff7098', 14);
+    emitBurst(m.x, m.y, m.colorIndex, 18, 1.1);
+    addWave(CX, CY, CORE_R, CORE_R * 3.8, 1, 0.75, 1.6);
+    takeDamage('核心过载', CX, CY - CORE_R * 1.2);
+  }
+
+  function triggerResonance() {
+    game.resonance = 2;
+    game.resonanceGlow = 1;
+    game.resonanceCount++;
+    game.corePulse = 1.4;
+    game.shake = Math.max(game.shake, 4);
+    addWave(CX, CY, CORE_R * 1.1, RING_R * 0.98, -1, 1.0, 2.2);
+    addWave(CX, CY, CORE_R * 2.3, RING_R * 1.35, -1, 1.3, 1);
+    emitBurst(CX, CY, 0, 20, 1.2);
+    showBanner('共 振', '全场光点减速 · 2 秒', -1, 1.9);
+  }
+
+  /* =========================================================
+     特效对象
+     ========================================================= */
+  function addPopup(x, y, text, color, size) {
+    while (popups.length >= MAX_POPUPS) popups.shift();
+    popups.push({
+      x: clamp(x + rand(-7, 7), 24, W - 24),
+      y: clamp(y + rand(-4, 4), 50, H - 30),
+      text: text,
+      color: color || '#dff8ff',
+      size: size || 13,
+      life: 1.2,
+      maxLife: 1.2,
+      drift: rand(-5, 5)
+    });
+  }
+
+  function addWave(x, y, startRadius, endRadius, colorIndex, life, width) {
+    while (waves.length >= MAX_WAVES) waves.shift();
+    waves.push({
+      x: x,
+      y: y,
+      r: startRadius || 0,
+      r0: startRadius || 0,
+      endR: endRadius,
+      rgb: paletteRgb(colorIndex),
+      life: life || 0.6,
+      maxLife: life || 0.6,
+      width: width || 1,
+      spin: rand(-1, 1)
+    });
+  }
+
+  function emitBurst(x, y, colorIndex, count, speedScale) {
+    const amount = Math.min(count, MAX_PARTICLES - particles.length + 8);
+    for (let i = 0; i < amount; i++) {
+      while (particles.length >= MAX_PARTICLES) particles.shift();
+      const angle = Math.random() * TAU;
+      const speed = BASE * rand(0.025, 0.24) * (speedScale || 1);
+      particles.push({
+        x: x,
+        y: y,
+        px: x,
+        py: y,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        size: rand(0.8, 2.5),
+        life: rand(0.3, 0.9),
+        maxLife: 0.9,
+        rgb: Math.random() < 0.22 ? '224,250,255' : paletteRgb(colorIndex)
+      });
+    }
+  }
+
+  function emitLaunchParticles(m) {
+    for (let i = 0; i < 6; i++) {
+      while (particles.length >= MAX_PARTICLES) particles.shift();
+      const angle = Math.atan2(m.y - CY, m.x - CX);
+      const spread = angle + Math.PI + rand(-0.55, 0.55);
+      const speed = BASE * rand(0.04, 0.2);
+      particles.push({
+        x: m.x,
+        y: m.y,
+        px: m.x,
+        py: m.y,
+        vx: Math.cos(spread) * speed,
+        vy: Math.sin(spread) * speed,
+        size: rand(0.7, 2.1),
+        life: rand(0.25, 0.65),
+        maxLife: 0.65,
+        rgb: PALETTE[m.colorIndex].rgb
+      });
+    }
+  }
+
+  function showBanner(title, sub, colorIndex, life) {
+    game.banner = {
+      title: title,
+      sub: sub,
+      colorIndex: colorIndex,
+      life: life,
+      maxLife: life
+    };
+  }
+
+  /* =========================================================
+     更新
+     ========================================================= */
+  function updatePointerSmooth(dt) {
+    if (!pointer.visible) return;
+    const k = Math.min(1, dt * 24);
+    pointer.sx += (pointer.x - pointer.sx) * k;
+    pointer.sy += (pointer.y - pointer.sy) * k;
+  }
+
+  function updateAim(dt, immediate) {
+    if (!pointer.visible) return;
+    const dx = pointer.x - CX;
+    const dy = pointer.y - CY;
+    if (Math.hypot(dx, dy) < CORE_R * 0.45) return;
+    const target = Math.atan2(dy, dx);
+    if (immediate) {
+      game.aimAngle = target;
+    } else {
+      game.aimAngle += angleDiff(game.aimAngle, target) * Math.min(1, dt * 15);
+    }
+  }
+
+  function updateEffects(dt) {
+    if (!game) return;
+
+    game.fieldPulse = Math.max(0, game.fieldPulse - dt * 2.6);
+    game.releasePulse = Math.max(0, game.releasePulse - dt * 3.2);
+    game.corePulse = Math.max(0, game.corePulse - dt * 3.1);
+    game.damageFlash = Math.max(0, game.damageFlash - dt * 2.4);
+    game.resonanceGlow = Math.max(0, game.resonanceGlow - dt * 1.3);
+    game.shake = Math.max(0, game.shake - dt * 24);
+
+    if (game.banner) {
+      game.banner.life -= dt;
+      if (game.banner.life <= 0) game.banner = null;
+    }
+
+    for (const p of particles) {
+      p.px = p.x;
+      p.py = p.y;
+      p.life -= dt;
+      p.x += p.vx * dt;
+      p.y += p.vy * dt;
+      p.vx *= Math.pow(0.08, dt);
+      p.vy *= Math.pow(0.08, dt);
+    }
+    particles = particles.filter((p) => p.life > 0);
+
+    for (const w of waves) {
+      w.life -= dt;
+      const t = clamp(1 - w.life / w.maxLife, 0, 1);
+      const ease = 1 - Math.pow(1 - t, 3);
+      w.r = w.r0 + (w.endR - w.r0) * ease;
+    }
+    waves = waves.filter((w) => w.life > 0);
+
+    for (const p of popups) {
+      p.life -= dt;
+      p.y -= 24 * dt;
+      p.x += p.drift * dt;
+    }
+    popups = popups.filter((p) => p.life > 0);
+  }
+
+  function update(dt) {
+    clock += dt;
+    updatePointerSmooth(dt);
+
+    if (state === STATE.START) {
+      game.introTime += dt;
+      updateTargetRotation(dt);
+      if (game.introTime >= 3) beginPlay();
+    } else if (state === STATE.PLAYING) {
+      updateAim(dt, false);
+      game.elapsed += dt;
+      if (game.tipTimer > 0) game.tipTimer = Math.max(0, game.tipTimer - dt);
+      if (game.invuln > 0) game.invuln = Math.max(0, game.invuln - dt);
+      if (game.resonance > 0) {
+        game.resonance = Math.max(0, game.resonance - dt);
+      }
+      updateDifficulty();
+      updateTargetRotation(dt);
+      updateSpawning(dt);
+      updateMotes(dt);
+    } else {
+      game.overTime += dt;
+      updateTargetRotation(dt);
+    }
+
+    updateEffects(dt);
+  }
+
+  /* =========================================================
+     绘制：背景与星空
+     ========================================================= */
+  function drawBackground() {
+    ctx.fillStyle = backgroundGradient;
+    ctx.fillRect(0, 0, W, H);
+
+    const parX = ((pointer.visible ? pointer.sx : CX) - CX) / Math.max(1, W) * 30;
+    const parY = ((pointer.visible ? pointer.sy : CY) - CY) / Math.max(1, H) * 24;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    paintNebula(
+      CX - W * 0.2 + parX * 1.8,
+      CY - H * 0.18 + parY * 1.5,
+      Math.max(W, H) * 0.56,
+      'rgba(22,68,140,.052)'
+    );
+    paintNebula(
+      CX + W * 0.24 + parX * 1.05,
+      CY + H * 0.2 + parY,
+      Math.max(W, H) * 0.42,
+      'rgba(112,37,137,.028)'
+    );
+
+    for (const s of stars) {
+      const x = s.x * W + parX * s.depth;
+      const y = s.y * H + parY * s.depth;
+      const twinkle = 0.66 + Math.sin(clock * s.speed + s.phase) * 0.34;
+      const a = s.alpha * twinkle;
+      if (a <= 0.01) continue;
+      ctx.fillStyle = s.blue
+        ? 'rgba(158,213,255,' + a + ')'
+        : 'rgba(228,246,255,' + a + ')';
+      ctx.beginPath();
+      ctx.arc(x, y, s.r, 0, TAU);
+      ctx.fill();
+      if (s.r > 1.05) {
+        ctx.strokeStyle = 'rgba(205,240,255,' + a * 0.35 + ')';
+        ctx.lineWidth = 0.5;
+        ctx.beginPath();
+        ctx.moveTo(x - 3.5, y);
+        ctx.lineTo(x + 3.5, y);
+        ctx.moveTo(x, y - 3.5);
+        ctx.lineTo(x, y + 3.5);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：目标环
+     ========================================================= */
+  function drawTargets() {
+    if (!targets) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 外圈细线
+    ctx.strokeStyle = 'rgba(113,191,235,.085)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(CX, CY, RING_R, 0, TAU);
+    ctx.stroke();
+
+    // 缓慢转动的刻度
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(targets.rotation);
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * TAU;
+      const long = i % 6 === 0;
+      const a0 = RING_R + (long ? 16 : 21);
+      const a1 = RING_R + (long ? 25 : 27);
+      ctx.strokeStyle = long ? 'rgba(133,207,243,.13)' : 'rgba(116,191,230,.055)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * a0, Math.sin(a) * a0);
+      ctx.lineTo(Math.cos(a) * a1, Math.sin(a) * a1);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 目标弧
+    for (const arc of targets.arcs) {
+      if (!arc.active) continue;
+      const p = PALETTE[arc.colorIndex];
+      const center = arc.baseAngle + targets.rotation;
+      const start = center - arc.width / 2;
+      const end = center + arc.width / 2;
+      const flash = arc.flash;
+
+      // 宽而淡的光晕
+      ctx.strokeStyle = rgba(p.rgb, 0.035 + flash * 0.055);
+      ctx.lineWidth = 34 + flash * 12;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.arc(CX, CY, RING_R, start, end);
+      ctx.stroke();
+
+      // 主弧光
+      ctx.save();
+      ctx.shadowBlur = 16 + flash * 14;
+      ctx.shadowColor = rgba(p.rgb, 0.72);
+      ctx.strokeStyle = rgba(p.rgb, 0.58 + flash * 0.3);
+      ctx.lineWidth = 6.5 + flash * 3;
+      ctx.beginPath();
+      ctx.arc(CX, CY, RING_R, start, end);
+      ctx.stroke();
+      ctx.restore();
+
+      // 内侧白光
+      ctx.strokeStyle = rgba('236,253,255', 0.3 + flash * 0.38);
+      ctx.lineWidth = 1.1;
+      ctx.beginPath();
+      ctx.arc(CX, CY, RING_R - 1, start, end);
+      ctx.stroke();
+
+      // 弧端点
+      for (const a of [start, end]) {
+        const x = CX + Math.cos(a) * RING_R;
+        const y = CY + Math.sin(a) * RING_R;
+        ctx.fillStyle = rgba(p.rgb, 0.75);
+        ctx.beginPath();
+        ctx.arc(x, y, 2.1, 0, TAU);
+        ctx.fill();
+      }
+
+      // 中心定位刻线
+      const tickOuter = RING_R + 22;
+      const tickInner = RING_R + 12;
+      ctx.strokeStyle = rgba(p.rgb, 0.3 + flash * 0.35);
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(CX + Math.cos(center) * tickInner, CY + Math.sin(center) * tickInner);
+      ctx.lineTo(CX + Math.cos(center) * tickOuter, CY + Math.sin(center) * tickOuter);
+      ctx.stroke();
+
+      // 沿弧移动的微光
+      const glintA = center + Math.sin(clock * 0.7 + arc.slot * 1.4) * arc.width * 0.33;
+      const gx = CX + Math.cos(glintA) * RING_R;
+      const gy = CY + Math.sin(glintA) * RING_R;
+      ctx.fillStyle = rgba('236,255,255', 0.36 + flash * 0.45);
+      ctx.beginPath();
+      ctx.arc(gx, gy, 1.3 + flash * 1.3, 0, TAU);
+      ctx.fill();
+    }
+
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：重力场与预判线
+     ========================================================= */
+  function drawField() {
+    if (!game.fieldActive) return;
+    const p = clamp(game.fieldPulse, 0, 1);
+    const fieldR = FIELD_R * (1 + Math.sin(clock * 2.4) * 0.006);
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    const fill = ctx.createRadialGradient(CX, CY, CORE_R * 0.6, CX, CY, fieldR);
+    fill.addColorStop(0, 'rgba(92,215,255,.055)');
+    fill.addColorStop(0.62, 'rgba(62,158,255,.022)');
+    fill.addColorStop(1, 'rgba(40,110,255,0)');
+    ctx.fillStyle = fill;
+    ctx.beginPath();
+    ctx.arc(CX, CY, fieldR, 0, TAU);
+    ctx.fill();
+
+    // 边界虚线
+    ctx.save();
+    ctx.strokeStyle = 'rgba(126,229,255,.3)';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([1.5, 11]);
+    ctx.lineDashOffset = -clock * 22;
+    ctx.beginPath();
+    ctx.arc(CX, CY, fieldR, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    // 引力辐条
+    ctx.save();
+    ctx.translate(CX, CY);
+    ctx.rotate(clock * 0.035);
+    for (let i = 0; i < 14; i++) {
+      const a = (i / 14) * TAU;
+      ctx.strokeStyle = 'rgba(112,206,255,.045)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(Math.cos(a) * (CORE_R * 1.7), Math.sin(a) * (CORE_R * 1.7));
+      ctx.lineTo(Math.cos(a) * fieldR, Math.sin(a) * fieldR);
+      ctx.stroke();
+    }
+    ctx.restore();
+
+    // 瞄准方向的引力主轴
+    const aim = game.aimAngle;
+    ctx.strokeStyle = 'rgba(183,244,255,.17)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 9]);
+    ctx.lineDashOffset = -clock * 28;
+    ctx.beginPath();
+    ctx.moveTo(CX + Math.cos(aim) * CORE_R * 1.35, CY + Math.sin(aim) * CORE_R * 1.35);
+    ctx.lineTo(CX + Math.cos(aim) * (RING_R + 12), CY + Math.sin(aim) * (RING_R + 12));
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 朝向瞄准方向的弧
+    ctx.strokeStyle = 'rgba(183,244,255,.42)';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(CX, CY, fieldR, aim - 0.24, aim + 0.24);
+    ctx.stroke();
+
+    // 场边缘的指引点
+    const aimX = CX + Math.cos(aim) * fieldR;
+    const aimY = CY + Math.sin(aim) * fieldR;
+    ctx.fillStyle = 'rgba(213,250,255,.72)';
+    ctx.beginPath();
+    ctx.arc(aimX, aimY, 1.8, 0, TAU);
+    ctx.fill();
+
+    // 每个吸附光点的引力连线
+    for (const m of motes) {
+      if (m.state !== 'captured' || m.dead) continue;
+      const cp = PALETTE[m.colorIndex];
+      ctx.strokeStyle = rgba(cp.rgb, 0.13);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 8]);
+      ctx.lineDashOffset = -clock * 18;
+      ctx.beginPath();
+      ctx.moveTo(CX, CY);
+      ctx.lineTo(m.x, m.y);
+      ctx.stroke();
+    }
+    ctx.setLineDash([]);
+
+    // 激活涟漪
+    if (p > 0.01) {
+      ctx.strokeStyle = 'rgba(138,238,255,' + p * 0.24 + ')';
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.arc(CX, CY, lerp(CORE_R * 1.2, fieldR, 1 - p), 0, TAU);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function drawPrediction() {
+    if (!game.fieldActive) return;
+    const captured = motes.filter((m) => m.state === 'captured' && !m.dead);
+    if (!captured.length) return;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    ctx.lineCap = 'round';
+
+    for (const m of captured) {
+      const p = PALETTE[m.colorIndex];
+      const angle = Math.atan2(m.y - CY, m.x - CX);
+      const startR = Math.max(CORE_R + 4, Math.hypot(m.x - CX, m.y - CY) + m.r * 2);
+      const sx = CX + Math.cos(angle) * startR;
+      const sy = CY + Math.sin(angle) * startR;
+      const ex = CX + Math.cos(angle) * (RING_R + 15);
+      const ey = CY + Math.sin(angle) * (RING_R + 15);
+
+      ctx.strokeStyle = rgba(p.rgb, 0.25);
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2.5, 7]);
+      ctx.lineDashOffset = -clock * 25;
+      ctx.beginPath();
+      ctx.moveTo(sx, sy);
+      ctx.lineTo(ex, ey);
+      ctx.stroke();
+
+      const hx = CX + Math.cos(angle) * RING_R;
+      const hy = CY + Math.sin(angle) * RING_R;
+      const hitArc = getArcAt(angle);
+      const match = hitArc && hitArc.colorIndex === m.colorIndex;
+
+      ctx.setLineDash([]);
+      if (match) {
+        ctx.strokeStyle = 'rgba(236,253,255,.55)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(hx, hy, 5.5, 0, TAU);
+        ctx.stroke();
+        ctx.fillStyle = 'rgba(255,255,255,.8)';
+        ctx.beginPath();
+        ctx.arc(hx, hy, 1.6, 0, TAU);
+        ctx.fill();
+      } else {
+        ctx.fillStyle = rgba(p.rgb, 0.55);
+        ctx.beginPath();
+        ctx.arc(hx, hy, 1.7, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：核心与光点
+     ========================================================= */
+  function drawCore() {
+    if (!game) return;
+    const dim = state === STATE.OVER ? 0.58 : 1;
+    const breathe = 1 + Math.sin(clock * 1.65) * 0.03 + (game.fieldActive ? 0.045 : 0);
+    const pulse = 1 + game.releasePulse * 0.08 + game.corePulse * 0.045;
+    const cr = CORE_R * breathe * pulse;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+
+    // 巨大外层光晕
+    const halo = ctx.createRadialGradient(CX, CY, cr * 0.2, CX, CY, cr * 4.2);
+    halo.addColorStop(0, 'rgba(174,249,255,' + (0.155 * dim) + ')');
+    halo.addColorStop(0.22, 'rgba(83,208,255,' + (0.075 * dim) + ')');
+    halo.addColorStop(0.58, 'rgba(28,112,255,' + (0.026 * dim) + ')');
+    halo.addColorStop(1, 'rgba(8,27,70,0)');
+    ctx.fillStyle = halo;
+    ctx.beginPath();
+    ctx.arc(CX, CY, cr * 4.2, 0, TAU);
+    ctx.fill();
+
+    // 共振光环
+    if (game.resonance > 0 || game.resonanceGlow > 0) {
+      const rGlow = Math.max(game.resonance / 2, game.resonanceGlow);
+      const rg = ctx.createRadialGradient(CX, CY, cr, CX, CY, cr * 6.2);
+      rg.addColorStop(0, 'rgba(194,252,255,' + 0.1 * rGlow + ')');
+      rg.addColorStop(0.45, 'rgba(92,225,255,' + 0.04 * rGlow + ')');
+      rg.addColorStop(1, 'rgba(40,140,255,0)');
+      ctx.fillStyle = rg;
+      ctx.beginPath();
+      ctx.arc(CX, CY, cr * 6.2, 0, TAU);
+      ctx.fill();
+    }
+
+    // 核心外围弧线
+    ctx.strokeStyle = 'rgba(146,240,255,' + 0.21 * dim + ')';
+    ctx.lineWidth = 1;
+    for (let i = 0; i < 3; i++) {
+      const start = clock * 0.26 + i * TAU / 3;
+      ctx.beginPath();
+      ctx.arc(CX, CY, cr * 1.48, start, start + 0.52);
+      ctx.stroke();
+    }
+
+    // 细虚线轨道
+    ctx.save();
+    ctx.strokeStyle = 'rgba(112,205,255,' + 0.095 * dim + ')';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([2, 9]);
+    ctx.lineDashOffset = clock * 11;
+    ctx.beginPath();
+    ctx.arc(CX, CY, cr * 1.86, 0, TAU);
+    ctx.stroke();
+    ctx.restore();
+
+    // 三个微小轨道光点
+    for (let i = 0; i < 3; i++) {
+      const a = clock * (0.18 + i * 0.03) + i * TAU / 3;
+      const orbR = cr * (1.5 + i * 0.16);
+      const x = CX + Math.cos(a) * orbR;
+      const y = CY + Math.sin(a) * orbR;
+      ctx.fillStyle = i === 1 ? 'rgba(255,132,219,.6)' : 'rgba(160,241,255,.65)';
+      ctx.beginPath();
+      ctx.arc(x, y, 1.8, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+
+    // 压力环
+    if (game.pressure > 0.02 && game.fieldActive) {
+      const press = game.pressure;
+      const pa = press > 0.76 ? 0.78 : 0.48;
+      const shift = clamp((press - 0.62) / 0.38, 0, 1);
+      const ringColor = shift > 0.45 ? '255,94,146' : '255,191,87';
+      ctx.save();
+      ctx.strokeStyle = rgba(ringColor, pa);
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = rgba(ringColor, 0.6);
+      ctx.beginPath();
+      ctx.arc(CX, CY, cr * 1.26, -Math.PI / 2, -Math.PI / 2 + TAU * clamp(press, 0.02, 1));
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    // 核心本体
+    ctx.save();
+    ctx.globalAlpha = dim;
+    ctx.shadowColor = 'rgba(95,222,255,.78)';
+    ctx.shadowBlur = 30 + (game.fieldActive ? 18 : 0);
+    const coreGradient = ctx.createRadialGradient(
+      CX - cr * 0.18, CY - cr * 0.22, cr * 0.03,
+      CX, CY, cr
+    );
+    coreGradient.addColorStop(0, 'rgba(255,255,255,1)');
+    coreGradient.addColorStop(0.16, 'rgba(225,253,255,.99)');
+    coreGradient.addColorStop(0.42, 'rgba(118,232,255,.96)');
+    coreGradient.addColorStop(0.72, 'rgba(30,149,224,.93)');
+    coreGradient.addColorStop(0.91, 'rgba(7,66,119,.96)');
+    coreGradient.addColorStop(1, 'rgba(3,25,55,.98)');
+    ctx.fillStyle = coreGradient;
+    ctx.beginPath();
+    ctx.arc(CX, CY, cr, 0, TAU);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+
+    // 核心内部的高光
+    const inner = ctx.createRadialGradient(
+      CX - cr * 0.12, CY - cr * 0.18, 0,
+      CX, CY, cr * 0.78
+    );
+    inner.addColorStop(0, 'rgba(255,255,255,.92)');
+    inner.addColorStop(0.32, 'rgba(232,254,255,.32)');
+    inner.addColorStop(0.72, 'rgba(105,231,255,.07)');
+    inner.addColorStop(1, 'rgba(31,132,205,0)');
+    ctx.fillStyle = inner;
+    ctx.beginPath();
+    ctx.arc(CX, CY, cr * 0.78, 0, TAU);
+    ctx.fill();
+
+    // 边缘
+    ctx.strokeStyle = 'rgba(210,250,255,.25)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.arc(CX, CY, cr * 0.985, 0, TAU);
+    ctx.stroke();
+
+    // 细十字星芒
+    ctx.strokeStyle = 'rgba(218,251,255,.16)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(CX - cr * 2.35, CY);
+    ctx.lineTo(CX - cr * 1.15, CY);
+    ctx.moveTo(CX + cr * 1.15, CY);
+    ctx.lineTo(CX + cr * 2.35, CY);
+    ctx.moveTo(CX, CY - cr * 2.2);
+    ctx.lineTo(CX, CY - cr * 1.12);
+    ctx.moveTo(CX, CY + cr * 1.12);
+    ctx.lineTo(CX, CY + cr * 2.2);
+    ctx.stroke();
+    ctx.restore();
+
+    // 蓄力倍率
+    if (game.fieldActive && game.capturedCount > 0 && state === STATE.PLAYING) {
+      const mult = 1 + (game.capturedCount - 1) * 0.35;
+      ctx.save();
+      ctx.textAlign = 'center';
+      ctx.font = '10px "Segoe UI", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = 'rgba(196,238,255,.55)';
+      drawSpacedText('引 力   ×' + mult.toFixed(1), CX, CY - cr * 2.65, 1.5, 'center');
+      ctx.restore();
+    }
+  }
+
+  function drawMotes() {
+    if (!motes.length) return;
+    const resonanceDim = game.resonance > 0 ? 0.38 : 1;
+
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const m of motes) {
+      if (m.dead) continue;
+      const p = PALETTE[m.colorIndex];
+      const seedDim = game.resonance > 0
+        ? 0.33 + Math.sin(clock * 4 + m.seed) * 0.08
+        : 1;
+      const strength = resonanceDim * seedDim;
+
+      // 拖尾
+      const trail = m.trail;
+      if (trail.length > 1) {
+        for (let i = 1; i < trail.length; i++) {
+          const t = i / (trail.length - 1);
+          ctx.strokeStyle = rgba(p.rgb, (0.02 + 0.24 * t * t) * strength);
+          ctx.lineWidth = Math.max(0.45, m.r * (0.35 + t * 0.82));
+          ctx.lineCap = 'round';
+          ctx.beginPath();
+          ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+          ctx.lineTo(trail[i].x, trail[i].y);
+          ctx.stroke();
+        }
+      }
+
+      // 外层光晕
+      const haloR = m.r * (m.state === 'captured' ? 6.2 : 7.2);
+      const g = ctx.createRadialGradient(m.x, m.y, 0, m.x, m.y, haloR);
+      g.addColorStop(0, rgba(p.rgb, 0.46 * strength));
+      g.addColorStop(0.28, rgba(p.rgb, 0.16 * strength));
+      g.addColorStop(0.7, rgba(p.rgb, 0.035 * strength));
+      g.addColorStop(1, rgba(p.rgb, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, haloR, 0, TAU);
+      ctx.fill();
+
+      // 光点本体
+      ctx.fillStyle = rgba(p.rgb, 0.96 * Math.max(0.4, strength));
+      ctx.beginPath();
+      ctx.arc(m.x, m.y, m.r, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(255,255,255,' + 0.88 * Math.max(0.45, strength) + ')';
+      ctx.beginPath();
+      ctx.arc(m.x - m.r * 0.18, m.y - m.r * 0.22, m.r * 0.42, 0, TAU);
+      ctx.fill();
+
+      // 吸附状态的小轨道
+      if (m.state === 'captured') {
+        ctx.save();
+        ctx.strokeStyle = rgba(p.rgb, 0.46);
+        ctx.lineWidth = 0.9;
+        ctx.setLineDash([1.5, 4]);
+        ctx.lineDashOffset = clock * 14;
+        ctx.beginPath();
+        ctx.arc(m.x, m.y, m.r + 5, 0, TAU);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：粒子、涟漪、飘字、横幅
+     ========================================================= */
+  function drawParticles() {
+    if (!particles.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const p of particles) {
+      const a = clamp(p.life / p.maxLife, 0, 1);
+      ctx.strokeStyle = rgba(p.rgb, a * 0.68);
+      ctx.lineWidth = p.size * a;
+      ctx.lineCap = 'round';
+      ctx.beginPath();
+      ctx.moveTo(p.px, p.py);
+      ctx.lineTo(p.x, p.y);
+      ctx.stroke();
+      ctx.fillStyle = rgba(p.rgb, a * 0.7);
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.size * 0.7, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawWaves() {
+    if (!waves.length) return;
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (const w of waves) {
+      const t = clamp(1 - w.life / w.maxLife, 0, 1);
+      const a = Math.pow(1 - t, 1.8);
+      ctx.strokeStyle = rgba(w.rgb, a * 0.42);
+      ctx.lineWidth = Math.max(0.35, w.width * (1 - t * 0.7));
+      ctx.beginPath();
+      ctx.arc(w.x, w.y, w.r, 0, TAU);
+      ctx.stroke();
+      if (w.width > 0.8) {
+        ctx.strokeStyle = rgba(w.rgb, a * 0.12);
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(w.x, w.y, Math.max(0, w.r * 0.87), 0, TAU);
+        ctx.stroke();
+      }
+    }
+    ctx.restore();
+  }
+
+  function drawPopups() {
+    if (!popups.length) return;
+    ctx.save();
+    ctx.textAlign = 'center';
+    for (const p of popups) {
+      const a = clamp(p.life / 0.55, 0, 1);
+      ctx.font = '500 ' + p.size + 'px "Cascadia Mono", "Consolas", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = a;
+      ctx.shadowColor = p.color;
+      ctx.shadowBlur = 10;
+      ctx.fillText(p.text, p.x, p.y);
+    }
+    ctx.restore();
+  }
+
+  function drawBanner() {
+    if (!game.banner || state !== STATE.PLAYING) return;
+    const b = game.banner;
+    const age = b.maxLife - b.life;
+    const fadeIn = clamp(age / 0.16, 0, 1);
+    const fadeOut = clamp(b.life / 0.42, 0, 1);
+    const a = Math.min(fadeIn, fadeOut);
+    if (a <= 0) return;
+
+    const p = PALETTE[b.colorIndex >= 0 ? b.colorIndex : 0];
+    const accent = b.colorIndex >= 0 ? p.body : 'rgba(202,247,255,1)';
+    const y = CY - RING_R * 0.62 + (1 - fadeIn) * 9;
+
+    ctx.save();
+    ctx.globalAlpha = a;
+    ctx.textAlign = 'center';
+    ctx.shadowColor = b.colorIndex >= 0 ? rgba(p.rgb, 0.6) : 'rgba(127,231,255,.6)';
+    ctx.shadowBlur = 20;
+    ctx.fillStyle = accent;
+    ctx.font = '300 27px "Microsoft YaHei", "PingFang SC", sans-serif';
+    drawSpacedText(b.title, CX, y, 8, 'center');
+    ctx.shadowBlur = 0;
+
+    if (b.sub) {
+      ctx.font = '10px "Segoe UI", "Microsoft YaHei", sans-serif';
+      ctx.fillStyle = 'rgba(190,229,246,.55)';
+      drawSpacedText(b.sub, CX, y + 23, 2, 'center');
+    }
+
+    const halfWidth = b.colorIndex >= 0 ? 150 : 128;
+    ctx.strokeStyle = b.colorIndex >= 0 ? rgba(p.rgb, 0.18) : 'rgba(143,231,255,.18)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(CX - halfWidth, y + 8);
+    ctx.lineTo(CX - 44, y + 8);
+    ctx.moveTo(CX + 44, y + 8);
+    ctx.lineTo(CX + halfWidth, y + 8);
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：HUD、提示与屏幕效果
+     ========================================================= */
+  function drawHUD() {
+    if (state === STATE.START) return;
+
+    const lineGradient = ctx.createLinearGradient(44, 0, W - 44, 0);
+    lineGradient.addColorStop(0, 'rgba(139,210,245,0)');
+    lineGradient.addColorStop(0.2, 'rgba(139,210,245,.15)');
+    lineGradient.addColorStop(0.8, 'rgba(139,210,245,.15)');
+    lineGradient.addColorStop(1, 'rgba(139,210,245,0)');
+    ctx.strokeStyle = lineGradient;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(44, TOP_LINE);
+    ctx.lineTo(W - 44, TOP_LINE);
+    ctx.stroke();
+
+    // 左侧标识
+    ctx.font = '10px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(174,224,248,.35)';
+    drawSpacedText('引 力 回 响', 48, TOP_LINE - 18, 1.6, 'left');
+
+    // 中央分数
+    ctx.textAlign = 'center';
+    ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(162,210,238,.34)';
+    drawSpacedText('分 数', CX, TOP_LINE - 35, 2.5, 'center');
+    ctx.font = '300 24px "Cascadia Mono", "Consolas", monospace';
+    ctx.fillStyle = 'rgba(230,250,255,.88)';
+    drawSpacedText(String(Math.floor(game.score)).padStart(6, '0'), CX, TOP_LINE - 10, 1.8, 'center');
+
+    // 连击点
+    if (game.combo > 0) {
+      for (let i = 0; i < 3; i++) {
+        const x = CX + (i - 1) * 12;
+        const y = TOP_LINE + 16;
+        ctx.fillStyle = i < game.combo ? 'rgba(143,238,255,.8)' : 'rgba(143,238,255,.14)';
+        ctx.beginPath();
+        ctx.arc(x, y, 1.8, 0, TAU);
+        ctx.fill();
+      }
+    }
+
+    // 生命
+    const dotGap = 15;
+    const startX = W - 56 - (START_LIVES - 1) * dotGap;
+    ctx.font = '9px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.textAlign = 'right';
+    ctx.fillStyle = 'rgba(162,210,238,.34)';
+    drawSpacedText('生 命', W - 54, TOP_LINE - 35, 2, 'right');
+    for (let i = 0; i < START_LIVES; i++) {
+      const x = startX + i * dotGap;
+      const y = TOP_LINE - 15;
+      const alive = i < game.lives;
+      if (alive) {
+        const glow = ctx.createRadialGradient(x, y, 0, x, y, 8);
+        glow.addColorStop(0, 'rgba(176,248,255,.34)');
+        glow.addColorStop(1, 'rgba(100,215,255,0)');
+        ctx.fillStyle = glow;
+        ctx.beginPath();
+        ctx.arc(x, y, 8, 0, TAU);
+        ctx.fill();
+        ctx.fillStyle = 'rgba(224,252,255,.92)';
+        ctx.beginPath();
+        ctx.arc(x, y, 2.6, 0, TAU);
+        ctx.fill();
+      } else {
+        ctx.strokeStyle = 'rgba(161,207,234,.18)';
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(x, y, 2.6, 0, TAU);
+        ctx.stroke();
+      }
+    }
+    ctx.textAlign = 'left';
+  }
+
+  function drawTip() {
+    if (state !== STATE.PLAYING || game.tipTimer <= 0) return;
+    const a = clamp(game.tipTimer / 1.1, 0, 1);
+    if (a <= 0) return;
+    ctx.save();
+    ctx.font = '11px "Segoe UI", "Microsoft YaHei", sans-serif';
+    ctx.fillStyle = 'rgba(196,235,252,' + a * 0.62 + ')';
+    drawSpacedText(
+      '按住左键 · 牵引光点        松开 / 空格 · 反向弹射',
+      CX, H - 48, 1.8, 'center'
+    );
+    ctx.restore();
+  }
+
+  function drawScreenEffects() {
+    ctx.save();
+    ctx.fillStyle = vignetteGradient;
+    ctx.fillRect(0, 0, W, H);
+
+    if (game && game.damageFlash > 0.01) {
+      const a = game.damageFlash;
+      const g = ctx.createRadialGradient(CX, CY, BASE * 0.08, CX, CY, Math.max(W, H) * 0.66);
+      g.addColorStop(0, 'rgba(255,40,100,0)');
+      g.addColorStop(0.55, 'rgba(255,38,96,' + a * 0.055 + ')');
+      g.addColorStop(1, 'rgba(255,12,70,' + a * 0.22 + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (game && game.resonanceGlow > 0.01) {
+      ctx.fillStyle = 'rgba(102,225,255,' + game.resonanceGlow * 0.025 + ')';
+      ctx.fillRect(0, 0, W, H);
+    }
+
+    if (game && state === STATE.PLAYING && game.lives === 1) {
+      const a = 0.035 + (Math.sin(clock * 3.4) * 0.5 + 0.5) * 0.028;
+      const g = ctx.createRadialGradient(CX, CY, BASE * 0.18, CX, CY, Math.max(W, H) * 0.68);
+      g.addColorStop(0, 'rgba(255,30,90,0)');
+      g.addColorStop(0.7, 'rgba(255,30,90,0)');
+      g.addColorStop(1, 'rgba(255,24,84,' + a + ')');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, W, H);
+    }
+    ctx.restore();
+  }
+
+  /* =========================================================
+     绘制：开场装饰与自定义准星
+     ========================================================= */
+  function drawIntroDecor() {
+    ctx.save();
+    ctx.globalCompositeOperation = 'lighter';
+    for (let i = 0; i < 6; i++) {
+      const p = PALETTE[i % 3];
+      const radius = ORBIT_R * (1.75 + (i % 3) * 0.32);
+      const angle = clock * (0.12 + i * 0.012) + i * TAU / 6;
+      const x = CX + Math.cos(angle) * radius;
+      const y = CY + Math.sin(angle) * radius;
+      ctx.strokeStyle = rgba(p.rgb, 0.16);
+      ctx.lineWidth = 1.4;
+      ctx.beginPath();
+      ctx.arc(CX, CY, radius, angle - 0.22, angle);
+      ctx.stroke();
+      const g = ctx.createRadialGradient(x, y, 0, x, y, 13);
+      g.addColorStop(0, rgba(p.rgb, 0.6));
+      g.addColorStop(1, rgba(p.rgb, 0));
+      ctx.fillStyle = g;
+      ctx.beginPath();
+      ctx.arc(x, y, 13, 0, TAU);
+      ctx.fill();
+      ctx.fillStyle = 'rgba(240,255,255,.75)';
+      ctx.beginPath();
+      ctx.arc(x, y, 1.5, 0, TAU);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  function drawCursor() {
+    cctx.clearRect(0, 0, W, H);
+    if (!pointer.visible) return;
+
+    const x = pointer.sx;
+    const y = pointer.sy;
+    const active = game && game.fieldActive;
+    const pulse = 1 + Math.sin(clock * 3.2) * 0.04;
+
+    cctx.save();
+    cctx.globalCompositeOperation = 'lighter';
+
+    const glowR = active ? 72 : 54;
+    const glow = cctx.createRadialGradient(x, y, 0, x, y, glowR);
+    glow.addColorStop(0, 'rgba(162,240,255,' + (active ? 0.15 : 0.105) + ')');
+    glow.addColorStop(0.38, 'rgba(95,206,255,.04)');
+    glow.addColorStop(1, 'rgba(55,150,255,0)');
+    cctx.fillStyle = glow;
+    cctx.beginPath();
+    cctx.arc(x, y, glowR, 0, TAU);
+    cctx.fill();
+
+    const r = (active ? 21 : 15) * pulse;
+
+    // 柔和四芒星
+    cctx.strokeStyle = 'rgba(144,232,255,.15)';
+    cctx.lineWidth = 1;
+    cctx.beginPath();
+    cctx.moveTo(x - r - 20, y);
+    cctx.lineTo(x - r - 8, y);
+    cctx.moveTo(x + r + 8, y);
+    cctx.lineTo(x + r + 20, y);
+    cctx.moveTo(x, y - r - 20);
+    cctx.lineTo(x, y - r - 8);
+    cctx.moveTo(x, y + r + 8);
+    cctx.lineTo(x, y + r + 20);
+    cctx.stroke();
+
+    cctx.strokeStyle = active ? 'rgba(203,250,255,.86)' : 'rgba(188,239,255,.69)';
+    cctx.lineWidth = 1;
+    cctx.beginPath();
+    cctx.arc(x, y, r, 0, TAU);
+    cctx.stroke();
+
+    cctx.strokeStyle = 'rgba(143,231,255,.35)';
+    cctx.lineWidth = 1;
+    for (let i = 0; i < 4; i++) {
+      const a = clock * 0.55 + i * TAU / 4;
+      cctx.beginPath();
+      cctx.arc(x, y, r + 4.5, a, a + 0.42);
+      cctx.stroke();
+    }
+
+    if (active) {
+      cctx.strokeStyle = 'rgba(128,225,255,.2)';
+      cctx.lineWidth = 1;
+      cctx.setLineDash([1.5, 6]);
+      cctx.lineDashOffset = -clock * 20;
+      cctx.beginPath();
+      cctx.arc(x, y, r + 10, 0, TAU);
+      cctx.stroke();
+      cctx.setLineDash([]);
+    }
+
+    cctx.strokeStyle = 'rgba(221,251,255,.58)';
+    cctx.lineWidth = 1;
+    cctx.beginPath();
+    cctx.moveTo(x - r - 7, y);
+    cctx.lineTo(x - r - 2.5, y);
+    cctx.moveTo(x + r + 2.5, y);
+    cctx.lineTo(x + r + 7, y);
+    cctx.moveTo(x, y - r - 7);
+    cctx.lineTo(x, y - r - 2.5);
+    cctx.moveTo(x, y + r + 2.5);
+    cctx.lineTo(x, y + r + 7);
+    cctx.stroke();
+
+    cctx.fillStyle = 'rgba(245,255,255,.9)';
+    cctx.beginPath();
+    cctx.arc(x, y, 1.45, 0, TAU);
+    cctx.fill();
+
+    cctx.restore();
+  }
+
+  /* =========================================================
+     渲染主函数
+     ========================================================= */
+  function render() {
+    ctx.clearRect(0, 0, W, H);
+    drawBackground();
+
+    let shakeX = 0;
+    let shakeY = 0;
+    if (game && game.shake > 0.02) {
+      shakeX = Math.sin(clock * 71.3) * game.shake;
+      shakeY = Math.cos(clock * 63.7) * game.shake * 0.7;
+    }
+
+    ctx.save();
+    ctx.translate(shakeX, shakeY);
+    drawTargets();
+    if (state === STATE.START) drawIntroDecor();
+    if (game && game.fieldActive) drawField();
+    if (game && state === STATE.PLAYING) drawPrediction();
+    drawMotes();
+    drawCore();
+    drawParticles();
+    drawWaves();
+    drawPopups();
+    drawBanner();
+    ctx.restore();
+
+    drawScreenEffects();
+    if (state !== STATE.START) drawHUD();
+    drawTip();
+    drawCursor();
+  }
+
+  /* =========================================================
+     主循环
+     ========================================================= */
+  function loop(now) {
+    const elapsed = (now - lastFrameTime) / 1000;
+    lastFrameTime = now;
+    const dt = clamp(elapsed, 0, 0.05);
+    update(dt);
+    render();
+    requestAnimationFrame(loop);
+  }
+
+  /* =========================================================
+     输入
+     ========================================================= */
+  function activateField() {
+    if (!game || state !== STATE.PLAYING || game.fieldActive) return;
+    game.fieldActive = true;
+    game.fieldPulse = 1;
+    game.capturedCount = motes.filter((m) => m.state === 'captured' && !m.dead).length;
+    updateAim(0, true);
+    if (game.tipTimer > 1.1) game.tipTimer = 1.1;
+    addWave(CX, CY, CORE_R * 1.1, FIELD_R * 0.72, -1, 0.55, 1.1);
+  }
+
+  function onPointerMove(e) {
+    const wasVisible = pointer.visible;
+    pointer.x = clamp(e.clientX, 0, W);
+    pointer.y = clamp(e.clientY, 0, H);
+    if (!wasVisible) {
+      pointer.sx = pointer.x;
+      pointer.sy = pointer.y;
+    }
+    pointer.visible = true;
+  }
+
+  function onPointerDown(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    pointer.x = clamp(e.clientX, 0, W);
+    pointer.y = clamp(e.clientY, 0, H);
+    pointer.sx = pointer.x;
+    pointer.sy = pointer.y;
+    pointer.visible = true;
+
+    if (state === STATE.START) {
+      beginPlay();
+      activateField();
+      pointer.down = true;
+      return;
+    }
+    if (state === STATE.OVER) {
+      startRound(false);
+      return;
+    }
+    if (state === STATE.PLAYING) {
+      pointer.down = true;
+      activateField();
+    }
+  }
+
+  function onPointerUp(e) {
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    pointer.down = false;
+    if (state === STATE.PLAYING && game && game.fieldActive) {
+      releaseField();
+    }
+  }
+
+  function onKeyDown(e) {
+    if (e.code === 'Space' || e.key === ' ') {
+      e.preventDefault();
+      if (state === STATE.START) {
+        beginPlay();
+      } else if (state === STATE.PLAYING && game && game.fieldActive) {
+        releaseField();
+      }
+      return;
+    }
+    if (e.key === 'r' || e.key === 'R') {
+      if (e.repeat) return;
+      e.preventDefault();
+      startRound(false);
+    }
+  }
+
+  function bindEvents() {
+    window.addEventListener('resize', resize, { passive: true });
+    window.addEventListener('pointermove', onPointerMove, { passive: true });
+    window.addEventListener('pointerdown', onPointerDown, { passive: false });
+    window.addEventListener('pointerup', onPointerUp, { passive: true });
+    window.addEventListener('pointercancel', onPointerUp, { passive: true });
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('contextmenu', (e) => e.preventDefault());
+    window.addEventListener('dragstart', (e) => e.preventDefault());
+
+    window.addEventListener('blur', () => {
+      pointer.visible = false;
+      pointer.down = false;
+      if (state === STATE.PLAYING && game && game.fieldActive) releaseField();
+    });
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) {
+        pointer.visible = false;
+        if (state === STATE.PLAYING && game && game.fieldActive) releaseField();
+      }
+      lastFrameTime = performance.now();
+    });
+
+    document.addEventListener('mouseleave', () => {
+      pointer.visible = false;
+    });
+
+    document.addEventListener('mouseenter', () => {
+      pointer.visible = true;
+    });
+  }
+
+  /* =========================================================
+     启动
+     ========================================================= */
+  function boot() {
+    bestCache = safeLoadBest();
+    resize();
+    bindEvents();
+    startRound(true);
+    document.documentElement.classList.add('has-custom-cursor');
+    lastFrameTime = performance.now();
+    requestAnimationFrame(loop);
+  }
+
+  boot();
+})();
+</script>
+</body>
+</html>
